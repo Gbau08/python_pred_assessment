@@ -2,6 +2,12 @@
 
 This application retrieves air quality data, processes the gathered information, and commits the processed results to an Azure SQL Server database. The application has been containerized as a Docker image, facilitating seamless deployment on Azure Container Instance (ACI) and scheduling via Azure Logic App.
 
+## Prerequisites:
+- Git: Ensure you have Git installed on your machine.
+- Docker install Docker on your machine.
+- Python: This project requires Python. Download and install from Python's official site.
+
+
 ## Application Overview
 
 ### **Python Code**:
@@ -58,8 +64,26 @@ Automates workflows and integrates services, apps, and data, and schedules the A
 
 The entire architecture provides a powerful, scalable, and automated solution for managing air quality data pipelines.
 
-### 2. **Improvements**:
+## **Improvements**:
   - **Incremental Logic**: The current architecture overwrites data with each run. An incremental update mechanism is recommended.
   - **Architecture Suggestions**: Consider using a cloud storage shared with the client for raw data uploads, and utilize tools like DBT for ELT processes instead of Python applications.
   - **Code Modularization**: To improve reusability, consider further modularizing the code.
   - **DevOps Integration**: Implement a CI/CD pipeline, use terraform for infrastructure provisioning, and consider multi-environment deployments.
+
+## **Running the Project: Local Setup Instructions **:
+
+### 1. **Clone the Repository**: 
+```
+git clone git@github.com:Gbau08/python_pred_assessment.git
+cd python_pred_assessment
+```
+
+### 2. **Build the Docker Image**: 
+```
+docker build -t my-python-pred-app .
+```
+
+### 3. **Run the Application Using Docker**: 
+```
+docker run -e DATABASE_HOST=AskMeTheServer.database.windows.net -e DATABASE_USER=AskMeTheUser -e DATABASE_PASSWORD=AskMeThePassword my-python-pred-app
+```
