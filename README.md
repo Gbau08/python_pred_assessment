@@ -69,6 +69,8 @@ The entire architecture provides a powerful, scalable, and automated solution fo
   - **Architecture Suggestions**: Consider using a cloud storage shared with the client for raw data uploads, and utilize tools like DBT for ELT processes instead of Python applications.
   - **Code Modularization**: To improve reusability, consider further modularizing the code.
   - **DevOps Integration**: Implement a CI/CD pipeline, use terraform for infrastructure provisioning, and consider multi-environment deployments.
+  - **DevOps Integration**: Add Documentation to setup Azure resources
+
 
 ## Running the Project: Local Setup Instructions:
 
