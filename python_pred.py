@@ -108,16 +108,16 @@ class DataProcessor:
         # Air Quality Index (AQI )values of the PM2.5  PM10 (defined on the 24hr average of PM2.5 and PM10 respectively)
         # Modified function to compute AQI based on observed concentration and given breakpoints
         try:
-            for _, values in breakpoints.items():
+            for category, values in breakpoints.items():
                 BreakpointLow, BreakpointHigh = values['Concentration']
                 AQILow, AQIHigh = values['AQI']
                 if BreakpointLow <= concentration <= BreakpointHigh:
                     AQI = ((AQIHigh - AQILow) / (BreakpointHigh - BreakpointLow)) * (concentration - BreakpointLow) + AQILow
-                    return AQI
-            return None  # Return None if concentration doesn't fit in any category
+                    return AQI, category
+            return None, None  # Return None if concentration doesn't fit in any category
         except Exception as e:
             logging.error(f"Error calculate_aqi_formula: {e}")
-            return None
+            return None, None
 
     @staticmethod
     def compute_aqi(rolling_avg_df):
@@ -143,10 +143,10 @@ class DataProcessor:
         }
 
         try:
-            aqui_df = rolling_avg_df.copy()
-            aqui_df = aqui_df[aqui_df['parameter'].isin(['PM25', 'PM10'])]
-            aqui_df.loc[:, 'AQI']= aqui_df.apply(lambda row: DataProcessor.calculate_aqi_formula(row['24hr_avg'], pm25_breakpoints) if row['parameter'] == 'PM25' else DataProcessor.calculate_aqi_formula(row['24hr_avg'], pm10_breakpoints),axis=1)
-            return aqui_df
+            aqi_df = rolling_avg_df.copy()
+            aqi_df = aqi_df[aqi_df['parameter'].isin(['PM25', 'PM10'])]
+            aqi_df[['AQI', 'AQI_Category']] = aqi_df.apply(lambda row: DataProcessor.calculate_aqi_formula(row['24hr_avg'], pm25_breakpoints) if row['parameter'] == 'PM25' else DataProcessor.calculate_aqi_formula(row['24hr_avg'], pm10_breakpoints), axis=1, result_type='expand')
+            return aqi_df
         except Exception as e:
             logging.error(f"Error computing AQI values: {e}")
 
@@ -171,7 +171,8 @@ class DatabaseManager:
                 parameter NVARCHAR(50),
                 date DATETIMEOFFSET,
                 [24hr_rolling_avg] FLOAT,
-                AQI FLOAT
+                AQI FLOAT,
+                AQI_Category NVARCHAR(100)
             )
         END
         """
@@ -216,14 +217,15 @@ class DatabaseManager:
         
         # Insert data into the AQI_TABLE table
         aqi_to_insert = list(aqi_df.itertuples(index=False, name=None))
-        self.cursor.executemany("INSERT INTO AQI_TABLE (city, parameter, date, [24hr_rolling_avg], AQI) VALUES (?, ?, ?, ?, ?)", aqi_to_insert)
+        self.cursor.executemany("INSERT INTO AQI_TABLE (city, parameter, date, [24hr_rolling_avg], AQI, AQI_Category) VALUES (?, ?, ?, ?, ?, ?)", aqi_to_insert)
+        self.cursor.commit()
         logging.info("Data inserted into AQI_TABLE successfully.")
         
         # Insert data into the ROLLING_AVG_TABLE
         rolling_avg_to_insert = list(rolling_avg_df.itertuples(index=False, name=None))
         self.cursor.executemany("INSERT INTO ROLLING_AVG_TABLE (city, parameter, date, [24hr_rolling_avg]) VALUES (?, ?, ?, ?)", rolling_avg_to_insert)
-        logging.info("Data inserted into ROLLING_AVG_TABLE successfully.")
         self.cursor.commit()
+        logging.info("Data inserted into ROLLING_AVG_TABLE successfully.")
 
 
     def drop_table_if_exists(self, table_name):
