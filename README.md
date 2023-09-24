@@ -70,7 +70,7 @@ The entire architecture provides a powerful, scalable, and automated solution fo
   - **Code Modularization**: To improve reusability, consider further modularizing the code.
   - **DevOps Integration**: Implement a CI/CD pipeline, use terraform for infrastructure provisioning, and consider multi-environment deployments.
 
-## **Running the Project: Local Setup Instructions **:
+## Running the Project: Local Setup Instructions:
 
 ### 1. **Clone the Repository**: 
 ```
