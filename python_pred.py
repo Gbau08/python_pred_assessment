@@ -261,7 +261,6 @@ class DatabaseManager:
         logging.info(f"Indexes for {rolling_avg_table_name} checked/created successfully.")
         self.cursor.commit()
 
-
     def batch_insert_data(self, aqi_df, rolling_avg_df):
         logging.info("Batch inserting data to AQI_TABLE and ROLLING_AVG_TABLE")
         
@@ -288,6 +287,12 @@ class DatabaseManager:
         self.cursor.commit()
         logging.info(f"{table_name} dropped successfully.")
 
+    def close(self):
+        if self.connection:
+            logging.info(f"Closing the database connection")
+            self.connection.close()
+            self.connection = None
+            self.cursor = None
 
 
 def main():
@@ -309,6 +314,8 @@ def main():
         db_manager.drop_table_if_exists('ROLLING_AVG_TABLE')
         db_manager.create_tables_if_not_exists("AQI_TABLE", "ROLLING_AVG_TABLE")
         db_manager.batch_insert_data(aqi_df, rolling_avg_df)
+        db_manager.close()
+
 
 
 if __name__ == "__main__":
