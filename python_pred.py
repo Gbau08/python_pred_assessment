@@ -8,6 +8,7 @@ import logging
 import os
 
 
+# Credentials are stored in Azure, so it is not visible on git
 DATABASE_CREDENTIALS = {
     'server': os.environ.get('DATABASE_HOST', 'default_host_if_not_set'),
     'database': 'SQL_DB_01_DEV',
@@ -23,49 +24,85 @@ class DataFetcher:
 
     @staticmethod
     def download_data(url, retries=5, delay=60):
+        """
+        Download the data from the provided URL.
+        Retry mechanism in place that waits for the specified delay before the next attempt
+        """
         for _ in range(retries):
             try:
-                logging.info(f"Try to donload from {url}")
+                logging.info(f"Trying to download from {url}")
                 response = requests.get(url, allow_redirects=True)
+                # Ensure the response status is successful (e.g., 200 OK)
                 response.raise_for_status()
                 return response
             except requests.RequestException as e:
                 logging.error(f"Attempt failed. Error: {e}")
-                if _ < retries - 1:  # If this wasn't the last attempt, then wait before the next one
+                # If this wasn't the last retry attempt, wait for the specified delay before the next attempt
+                if _ < retries - 1:
                     logging.info(f"Waiting for {delay} seconds before retrying...")
                     time.sleep(delay)
                 else:
+                    # If all retries have been exhausted, log an error and return None
                     logging.error("Max retries reached. Exiting.")
                     return None
 
 
     @staticmethod
     def extract_data_from_zip(response):
+        """
+        Extract the data from the zip file and create Panda dataframes out of those files.
+        """
+
         try:
+            # Open the provided zip file using a BytesIO buffer
             with zipfile.ZipFile(BytesIO(response.content)) as z:
+                # Get a list of all file names within the zip archive
                 files_in_zip = z.namelist()
-                jsonDfs = [pd.read_json(z.open(file_name), lines=True) for file_name in files_in_zip if file_name.endswith('.ndjson')]
+
+                # Identify and load .ndjson files from the zip archive
+                json_files = [file_name for file_name in files_in_zip if file_name.endswith('.ndjson')]
+                jsonDfs = []
+                for file_name in json_files:
+                    # Read each .ndjson file into a pandas DataFrame
+                    df = pd.read_json(z.open(file_name), lines=True)
+                    jsonDfs.append(df)
+                    logging.info(f"Loaded {len(df)} rows from {file_name}")
+
+                # Validate that all identified .ndjson files were successfully loaded
+                if len(jsonDfs) != len(json_files):
+                    raise ValueError(f"Expected to load {len(json_files)} .ndjson files but loaded {len(jsonDfs)}")
+
+                # Combine all the .ndjson DataFrames into a single DataFrame
+                combined_df = pd.concat(jsonDfs, ignore_index=True)
+                logging.info(f"Combined .ndjson files into a DataFrame with {len(combined_df)} rows")
+
+                # Load the countries.csv file from the zip archive, if it exists
                 country_files = [file_name for file_name in files_in_zip if file_name.endswith('countries.csv')]
                 if country_files:
                     countries_df = pd.read_csv(z.open(country_files[0]))
                 else:
                     raise ValueError("No countries.csv file found in the zip archive.")
-                combined_df = pd.concat(jsonDfs, ignore_index=True)
+
+                # Return the combined .ndjson DataFrame and countries DataFrame
                 return combined_df, countries_df
         except Exception as e:
             logging.error(f"An error occurred: {e}")
             return None, None
 
 
-
 class DataProcessor:
 
     @staticmethod
     def filter_countries(combined_df, countries_df):
+        """
+        Filter the combined dataset using the list of countries from the countries_df.
+        Use join to speed up processing
+        """
         try:
             combined_df['country'] = combined_df['country'].str.upper().str.strip()
             countries_df['country_code'] = countries_df['country_code'].str.upper().str.strip()
             filtered_countries_df = pd.merge(combined_df, countries_df, left_on='country', right_on='country_code', how='inner')
+            logging.info(f"Filtered DataFrame by countries now {len(filtered_countries_df)} rows")
             return filtered_countries_df
         except Exception as e:
             logging.error(f"Error during Data filtering & processing: {e}")
@@ -73,15 +110,20 @@ class DataProcessor:
     
     @staticmethod
     def filter_parameters_hourly_obs(df):
+        """
+        Filter the dataset to keep only specific parameters and observations made on an hourly basis.
+        Assumption: to compute the 24h rollling average, we only take records where the observations are made very hour (remove the other unit such as 8 or 24h average)
+        """
         try:
             filtered_df = df.copy()
-            filtered_df['parameter'] = filtered_df['parameter'].str.strip().str.upper()
-            filtered_df = filtered_df[filtered_df['parameter'].isin(['PM2.5', 'PM10', 'O3', 'NO2', 'CO'])]
+            filtered_df['parameter'] = filtered_df['parameter'].str.strip().str.upper() # Make sure to trim & upper case for filter below
+            filtered_df = filtered_df[filtered_df['parameter'].isin(['PM2.5', 'PM10', 'O3', 'NO2', 'CO'])] # As per requirement
             filtered_df['date'] = filtered_df['date'].apply(lambda x: x['utc'])
             filtered_df['date'] = pd.to_datetime(filtered_df['date'])
             filtered_df['averagingPeriod_value'] = filtered_df['averagingPeriod'].apply(lambda x: x.get('value', None))
             filtered_df['averagingPeriod_unit'] = filtered_df['averagingPeriod'].apply(lambda x: x.get('unit', None))
             filtered_df = filtered_df[(filtered_df['averagingPeriod_value'] == 1) & (filtered_df['averagingPeriod_unit'] == 'hours')]
+            logging.info(f"Filtered DataFrame by paramter and hourly unit only, now {len(filtered_df)} rows")
             return filtered_df
         except Exception as e:
             logging.error(f"Error filter_parameters_hourly_obs: {e}")
@@ -89,6 +131,11 @@ class DataProcessor:
     
     @staticmethod
     def compute_rolling_average(df):
+        """
+        Compute the 24h rolling average for the filtered data.
+        Assumptions: multiple observations per city at the same time, we will take the mean of those obversations to have an hourly average per city/date/time
+        then the 24h rolling average is computed. If there are less then 24 observations, we  still compute the rolling average of those observations
+        """
         try:
             filtered_df = DataProcessor.filter_parameters_hourly_obs(df)
             city_hourly_avg_df = filtered_df.groupby(['city', 'date', 'parameter']).agg({'value': 'mean'}).reset_index()
@@ -98,6 +145,7 @@ class DataProcessor:
                               .apply(lambda group: group.set_index('date').resample('H')['value'].mean().rolling(window=24, min_periods=1).mean())
                               .reset_index()
                               .rename(columns={'value': '24hr_avg'}))
+            logging.info(f"Computed Rolling Avg DataFrame, now {len(rolling_avg_df)} rows")
             return rolling_avg_df
         except Exception as e:
             logging.error(f"Error compute_rolling_average: {e}")
@@ -105,8 +153,10 @@ class DataProcessor:
     
     @staticmethod
     def calculate_aqi_formula(concentration, breakpoints):
-        # Air Quality Index (AQI )values of the PM2.5  PM10 (defined on the 24hr average of PM2.5 and PM10 respectively)
-        # Modified function to compute AQI based on observed concentration and given breakpoints
+        """
+        Compute the Air Quality Index (AQI) values based on the 24h rolling averages.
+        The AQI data is stored in the aqi_df instance attribute.
+        """
         try:
             for category, values in breakpoints.items():
                 BreakpointLow, BreakpointHigh = values['Concentration']
@@ -121,8 +171,8 @@ class DataProcessor:
 
     @staticmethod
     def compute_aqi(rolling_avg_df):
-
-        # Defining AQI breakpoints and categories for PM2.5 and PM10
+ 
+        # Defining AQI breakpoints and categories for PM2.5 and PM10 (could be placed elsewhere in the future)
         pm25_breakpoints = {
             'Good': {'AQI': (0, 50), 'Concentration': (0, 12.0)},
             'Moderate': {'AQI': (51, 100), 'Concentration': (12.1, 35.4)},
@@ -225,7 +275,6 @@ class DatabaseManager:
         rolling_avg_to_insert = list(rolling_avg_df.itertuples(index=False, name=None))
         self.cursor.executemany("INSERT INTO ROLLING_AVG_TABLE (city, parameter, date, [24hr_rolling_avg]) VALUES (?, ?, ?, ?)", rolling_avg_to_insert)
         self.cursor.commit()
-        logging.info("Data inserted into ROLLING_AVG_TABLE successfully.")
 
 
     def drop_table_if_exists(self, table_name):
