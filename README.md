@@ -2,11 +2,6 @@
 
 This application retrieves air quality data, processes the gathered information, and commits the processed results to an Azure SQL Server database. The application has been containerized as a Docker image, facilitating seamless deployment on Azure Container Instance (ACI) and scheduling via Azure Logic App.
 
-## Prerequisites:
-- Git: Ensure you have Git installed on your machine.
-- Docker install Docker on your machine.
-- Python: This project requires Python. Download and install from Python's official site.
-
 
 ## Application Overview
 
@@ -73,6 +68,12 @@ The entire architecture provides a powerful, scalable, and automated solution fo
 
 
 ## Running the Project: Local Setup Instructions:
+
+### 0. **Prerequisites**:
+- Git: Ensure you have Git installed on your machine.
+- Docker install Docker on your machine.
+- Python: This project requires Python. Download and install from Python's official site.
+
 
 ### 1. **Clone the Repository**: 
 ```
